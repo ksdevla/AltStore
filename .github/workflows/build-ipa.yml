@@ -167,24 +167,26 @@ jobs:
           if-no-files-found: error
 
       - name: Create or Update GitHub Release
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/marketplace')) || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
-        continue-on-error: true
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'continuous' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('AltStore Continuous Build ({0})', github.sha) }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'AltStore Latest Build' }}
+          draft: false
+          prerelease: false
+          make_latest: true
           files: |
             build/AltStore.ipa
             build/AltStore.ipa.sha256
           body: |
-            ### AltStore Automated Build
+            ### AltStore Automated Build :rocket:
             
-            - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             - **Branch**: `${{ github.ref_name }}`
+            - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             - **Run**: [#${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
             
-            #### Sideloading Instructions
+            #### Sideloading Instructions:
             1. Download `AltStore.ipa` below.
             2. Open **AltStore** or **SideStore** on your device, or use **AltServer** / **Sideloadly**.
             3. Install/refresh the app with your Apple ID.
