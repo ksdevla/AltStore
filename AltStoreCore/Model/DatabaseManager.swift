@@ -473,11 +473,21 @@ private extension DatabaseManager
             }
         }
         
+        // If there is no shared app group container accessible, we cannot and should not migrate.
+        guard FileManager.default.altstoreSharedDirectory != nil else {
+            return finish(.success(()))
+        }
+        
         let previousDatabaseURL = PersistentContainer.legacyDirectoryURL().appendingPathComponent("AltStore.sqlite")
         let databaseURL = PersistentContainer.defaultDirectoryURL().appendingPathComponent("AltStore.sqlite")
         
         let previousAppsDirectoryURL = InstalledApp.legacyAppsDirectoryURL
         let appsDirectoryURL = InstalledApp.appsDirectoryURL
+        
+        // If the legacy and current paths are identical, no migration is needed.
+        guard previousDatabaseURL != databaseURL || previousAppsDirectoryURL != appsDirectoryURL else {
+            return finish(.success(()))
+        }
         
         let databaseIntent = NSFileAccessIntent.writingIntent(with: databaseURL, options: [.forReplacing])
         let appsIntent = NSFileAccessIntent.writingIntent(with: appsDirectoryURL, options: [.forReplacing])
@@ -498,7 +508,7 @@ private extension DatabaseManager
                 let persistentStoreCoordinator = NSPersistentStoreCoordinator(managedObjectModel: self.persistentContainer.managedObjectModel)
                 
                 // Migrate database
-                if FileManager.default.fileExists(atPath: previousDatabaseURL.path)
+                if previousDatabaseURL != databaseURL && FileManager.default.fileExists(atPath: previousDatabaseURL.path)
                 {
                     if FileManager.default.fileExists(atPath: databaseURL.path, isDirectory: nil)
                     {
@@ -514,9 +524,16 @@ private extension DatabaseManager
                 }
                 
                 // Migrate apps
-                if FileManager.default.fileExists(atPath: previousAppsDirectoryURL.path, isDirectory: nil)
+                if previousAppsDirectoryURL != appsDirectoryURL && FileManager.default.fileExists(atPath: previousAppsDirectoryURL.path, isDirectory: nil)
                 {
-                    _ = try FileManager.default.replaceItemAt(appsDirectoryURL, withItemAt: previousAppsDirectoryURL)
+                    if FileManager.default.fileExists(atPath: appsDirectoryURL.path, isDirectory: nil)
+                    {
+                        _ = try FileManager.default.replaceItemAt(appsDirectoryURL, withItemAt: previousAppsDirectoryURL)
+                    }
+                    else
+                    {
+                        try FileManager.default.moveItem(at: previousAppsDirectoryURL, to: appsDirectoryURL)
+                    }
                 }
                 
                 finish(.success(()))
