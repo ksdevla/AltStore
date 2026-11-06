@@ -1,0 +1,190 @@
+name: Build AltStore IPA
+
+on:
+  push:
+    branches:
+      - main
+      - marketplace
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - marketplace
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish as GitHub Release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    name: Build AltStore IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode Version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
+
+      - name: Display Build Environment
+        run: |
+          echo "Xcode version:"
+          xcodebuild -version
+          echo ""
+          echo "Swift version:"
+          swift --version
+          echo ""
+          echo "macOS version:"
+          sw_vers
+
+      - name: Cache Swift Package Manager Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            DerivedData/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('AltStore.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Install CocoaPods (if needed)
+        run: |
+          if [ -f "Podfile" ]; then
+            echo "Installing CocoaPods dependencies..."
+            pod install || true
+          fi
+
+      - name: Resolve Swift Package Dependencies
+        run: |
+          echo "Resolving Swift Package Manager dependencies..."
+          xcodebuild -resolvePackageDependencies \
+            -workspace AltStore.xcworkspace \
+            -scheme AltStore \
+            -derivedDataPath DerivedData
+
+      - name: Build and Archive AltStore
+        run: |
+          mkdir -p build
+
+          echo "Starting xcodebuild archive for AltStore..."
+          set -o pipefail
+
+          if command -v xcbeautify > /dev/null 2>&1; then
+            xcodebuild archive \
+              -workspace AltStore.xcworkspace \
+              -scheme AltStore \
+              -configuration Release \
+              -destination "generic/platform=iOS" \
+              -archivePath build/AltStore.xcarchive \
+              -derivedDataPath DerivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES \
+              COMPILER_INDEX_STORE_ENABLE=NO | xcbeautify
+          else
+            xcodebuild archive \
+              -workspace AltStore.xcworkspace \
+              -scheme AltStore \
+              -configuration Release \
+              -destination "generic/platform=iOS" \
+              -archivePath build/AltStore.xcarchive \
+              -derivedDataPath DerivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES \
+              COMPILER_INDEX_STORE_ENABLE=NO
+          fi
+
+      - name: Package App into IPA
+        run: |
+          APP_PATH=$(find build/AltStore.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -n 1)
+
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "::error::AltStore.app was not found in the xcarchive!"
+            ls -la build/AltStore.xcarchive/Products/Applications || true
+            exit 1
+          fi
+
+          echo "Found app at: $APP_PATH"
+
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+
+          cd build
+          zip -r -y -q AltStore.ipa Payload
+          shasum -a 256 AltStore.ipa > AltStore.ipa.sha256
+
+          IPA_SIZE=$(ls -lh AltStore.ipa | awk '{print $5}')
+          SHA256_HASH=$(awk '{print $1}' AltStore.ipa.sha256)
+
+          echo "IPA created successfully at build/AltStore.ipa ($IPA_SIZE)"
+          echo "SHA256: $SHA256_HASH"
+          cd ..
+
+          # Add job summary for GitHub Actions UI
+          echo "### AltStore IPA Build Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **File** | \`AltStore.ipa\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Size** | \`$IPA_SIZE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **SHA256** | \`$SHA256_HASH\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AltStore-ipa
+          path: |
+            build/AltStore.ipa
+            build/AltStore.ipa.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create or Update GitHub Release
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'continuous' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('AltStore Continuous Build ({0})', github.sha) }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          files: |
+            build/AltStore.ipa
+            build/AltStore.ipa.sha256
+          body: |
+            ### AltStore Automated Build
+            
+            - **Commit**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            - **Branch**: `${{ github.ref_name }}`
+            - **Run**: [#${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            #### Sideloading Instructions
+            1. Download `AltStore.ipa` below.
+            2. Open **AltStore** or **SideStore** on your device, or use **AltServer** / **Sideloadly**.
+            3. Install/refresh the app with your Apple ID.
