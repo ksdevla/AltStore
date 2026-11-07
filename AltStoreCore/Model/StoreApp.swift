@@ -16,29 +16,21 @@ public extension StoreApp
 {
     static let altstoreMarketplaceID: UInt64 = 6478868316
     
-    #if MARKETPLACE
-    
-    #if ALPHA
-    static let altstoreAppID = "io.altstore.AltStore.Alpha"
-    #elseif BETA
-    static let altstoreAppID = "io.altstore.AltStore.Beta"
-    #else
-    static let altstoreAppID = "io.altstore.AltStore"
-    #endif
+    static var altstoreAppID: String {
+        if let bundleID = Bundle.main.bundleIdentifier, !bundleID.isEmpty {
+            if bundleID.hasSuffix(".AltWidget") {
+                return String(bundleID.dropLast(".AltWidget".count))
+            }
+            return bundleID
+        }
+        #if MARKETPLACE
+        return "io.altstore.AltStore"
+        #else
+        return "com.rileytestut.AltStore"
+        #endif
+    }
     
     static let publicAltStoreAppID = "io.altstore.AltStore"
-    
-    #else
-    
-    #if ALPHA
-    static let altstoreAppID = "com.rileytestut.AltStore.Alpha"
-    #elseif BETA
-    static let altstoreAppID = "com.rileytestut.AltStore.Beta"
-    #else
-    static let altstoreAppID = "com.rileytestut.AltStore"
-    #endif
-    
-    #endif
     
     static let dolphinAppID = "me.oatmealdome.dolphinios-njb"
     

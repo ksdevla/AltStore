@@ -59,13 +59,14 @@ public extension Bundle
     #else
     static var baseAltStoreAppGroupID = "group.com.rileytestut.AltStore"
     #endif
+    static var legacyAltStoreAppGroupID = "group.com.rileytestut.AltStore"
     
     var appGroups: [String] {
         return self.infoDictionary?[Bundle.Info.appGroups] as? [String] ?? []
     }
     
     var altstoreAppGroup: String? {        
-        let appGroup = self.appGroups.first { $0.contains(Bundle.baseAltStoreAppGroupID) }
+        let appGroup = self.appGroups.first { $0.contains(Bundle.baseAltStoreAppGroupID) || $0.contains(Bundle.legacyAltStoreAppGroupID) || $0.contains("group.io.altstore.AltStore") }
         return appGroup
     }
     

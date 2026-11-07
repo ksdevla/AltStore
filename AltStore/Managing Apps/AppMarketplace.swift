@@ -117,7 +117,9 @@ actor AppMarketplace: NSObject
     {
         do
         {
-            let certificateURL = Bundle.main.url(forResource: "AltMarketplace", withExtension: "cer")!
+            guard let certificateURL = Bundle.main.url(forResource: "AltMarketplace", withExtension: "cer") else {
+                throw CocoaError(.fileNoSuchFile)
+            }
             let certificateData = try Data(contentsOf: certificateURL)
                         
             guard let certificate = SecCertificateCreateWithData(nil, certificateData as CFData) else { throw CocoaError(.fileReadCorruptFile, userInfo: [NSURLErrorKey: certificateURL]) }
